@@ -1,0 +1,332 @@
+---
+title: "Análise geométrica das votações na Câmara durante o governo Bolsonaro (2019-2022)"
+author: "Gabriel Pistelli Ferreira"
+date: '2022-04-24'
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+<style>
+body {
+text-align: justify;
+font-size: 12pt}
+</style>
+
+
+```{r, echo = F, warning = FALSE, message=FALSE}
+library(tidyverse)
+library(FactoMineR)
+library(factoextra)
+```
+
+
+## Analisando votos partidários
+
+Todos sabemos que acompanhar as votações dos deputados e senadores é um papel importantíssimo dos cidadãos numa democracia representativa, uma vez que é a partir desta que podemos ter uma ideia de quem *realmente* defende o que nos interessa e no que acreditamos. Por isso, alguém minimamente informado tende a acompanhar algumas votações e analisar, mesmo que de relance, alguns quadros e reportagens do tipo "como votou cada deputado" em cada tema específico que lhe interessa. 
+
+Estas informações, em geral trazidas por jornalistas -- ou internautas mesmo --, possuem o problema, entretanto, de não juntarem análises de diferentes votações e organizarem as pautas reunidas dos diferentes partidos e congressistas. Não é pouco comum, então, que esbravejemos contra deputados que votaram contra algo que acreditamos, mas logo esquecemos de seu voto, ou, ainda perdemos de vista que aquele ou outro votou de forma ruim em determinados temas por não possuir destaque. Neste sentido, uma esquematização dos votos é bastante importante, ainda mais para não nos perdermos neste verdadeiro oceano de votações, entre diversos projetos de leis, emendas, requisições de urgência, etc.
+
+Um dos métodos que têm sido bastante utilizado é o [índice de governismo](https://radar.congressoemfoco.com.br/governismo/camara), o qual acompanha a porcentagem de votações dos partidos em conjunto com o governo. Este índice, embora sirva para representar a proximidade de deputados ao governo, ainda assim deixa de apresentar exatamente em quais temas e objetos houve concordâncias e discordâncias, o que dificulta posicionar adequadamente os congressistas dentro de determinadas posições e visões políticas. Além disso, é comum que tenhamos votações com unanimidade, como foi o caso do [PL de distribuição de absorventes](https://www.camara.leg.br/noticias/799998-camara-aprova-distribuicao-gratuita-de-absorventes-higienicos-para-estudantes-e-mulheres-de-baixa-renda/), [vetado](https://www12.senado.leg.br/noticias/materias/2021/10/07/bolsonaro-veta-distribuicao-de-absorventes-a-estudantes-e-mulheres-pobres) por Bolsonaro. 
+
+Todos os métodos de acompanhamento citados até o presente momento, entretanto, tendem a olhar para as votações de forma individual e pouco organizada, sem desvendar exatamente como as votações se relacionam umas com as outras. Propomos, então, que acompanhar estas votações poderia ser melhorado ainda mais com a comparação da estrutura das votações e posição dos partidos: ao invés de olhar para votos individuais, estudar como cada partido se posiciona em temas diferentes. Algo parecido foi feito pela [BBC](https://www.bbc.com/portuguese/brasil-41058120), na legislatura anterior, por exemplo, com definições manuais e construção de índices inspirados no [compasso político](https://www.politicalcompass.org/) (o qual, em si, apresenta algumas limitações, mas não entraremos neste tópico aqui) a partir de votações dos partidos. 
+
+Este trabalho nos parece bastante interessante, em especial para a divulgação jornalística, mas gostaríamos de propôr um outro modelo a partir da construção de um espaço de votações, inspirando-nos na Análise Geométrica de Dados, para representar as posições destes partidos. Este método possui algumas vantagens, como facilitar nosso trabalho a partir de algoritmos que já realizem esta comparação de imediato para nós e se basear em oposições reais construídas a partir dos dados, sem assumir oposições (como seria o caso da análise a partir do compasso político). 
+
+Neste sentido, propomos uma análise a partir das posições das votações e com foco nos partidos. Um ponto importante deste enfoque nos partidos também se enquadra perfeitamente na forma de nossa democracia: como sabemos, os votos para deputados também vão para as chamadas legendas, entre as quais, então, são divididas as cadeiras obtidas. Ou seja, se aquele seu deputado vota em tudo que você pensa, mas está em um partido que vota completamente diferente, ele pode acabar anulando seu voto, ajudando a eleger justamente quem pensa o completo oposto. Contudo, em conjunto à proposição dos partidos, pretendemos também analisar os votos individuais a partir da [clusterização](https://pt.wikipedia.org/wiki/Clustering) destes parlamentares por meio dos componentes principais obtidos com a análise geométrica, para, em seguida, definirmos a posição dos partidos com relação a Bolsonaro. Parece que estamos falando grego? Calma! Tudo ficará melhor explicado mais à frente, mas antes precisamos falar de onde tiramos nossos dados e como os organizamos. Se quiser pular esta parte, aliás, fique à vontade.
+
+### Dados disponíveis na API da Câmara
+
+Nossos dados foram todos obtidos todos diretamente através da [API da câmara](https://dadosabertos.camara.leg.br/swagger/api.html), uma interface de programação disponibilizada pelo congresso que nos permite requisitar dados diretamente através de uma URL que podemos acessar em nossos computadores e programas estatísticos. Este instrumento é bastante prático porque podemos, a partir dele, coletar dados sem sairmos de nossa área de trabalho ou ter que ir por aí navegando link por link atrás de dados. Na API da Câmara podemos encontrar informações sobre as legislaturas, atividades do congresso, frentes parlamentares, discursos e, claro, votações dos deputados e deputadas nas matérias discutidas. 
+
+Tudo isso à disposição em poucas linhas de código, o que facilita ainda mais o acompanhamento das atividades parlamentares e permite que novas análises sejam conduzidas todo dia sobre o tema. Para facilitar ainda mais nosso trabalho, desenvolvemos algumas funções de coleta destes dados (as quais estão disponíveis em nosso [github](https://github.com/gpistelli)) e a partir delas buscamos as votações e dados dos parlamentares para construir nosso dataset e realizar nossa análise.
+
+Nosso processo de coleta de dados, então, foi basicamente o seguinte: procuramos na imprensa notícias sobre votações de destaque e, a cada votação que nos interessava, anotávamos sua data e tema em um documento a parte, com seus nomes. Um dos principais sites que nos ajudou muito a selecionar nossas votações foi ["Como votam os deputados"](https://especiais.g1.globo.com/politica/2019/o-voto-dos-deputados/), do G1, a qual nos forneceu datas e até mesmo números das votações que nos facilitou localizar as votações na API do Câmara.
+
+Quem for utilizar a API vai perceber que estas votações não são necessariamente tão fáceis de serem localizadas: vários projetos de leis, emendas e resoluções são votadas cada dia, o que dificulta a localização de algumas destas. Na mesma medida, diferentes tipos de votações podem ser encontrados, os quais nem sempre estão disponíveis na API, como é o caso das votações dos vetos presidenciais, as quais ocorrem em conjunto com o Senado. E, por fim, para coroar todo este trabalho, cada votação específica possui um ID que é a única forma de ter acesso aos dados da votação na plataforma.
+
+Ao escolhermos a votação a ser analisada, buscávamos as votações em plenário realizadas no dia, a qual gerava um data.frame do qual retirávamos o ID desta votação. Um atalho que recomendamos seguir é notar que todas as proposições possuem um ID e os eventos (nos quais as votações estão incluídas) em torno destas tinham seus números identificados pela proposição. Por exemplo, se uma proposição se identificasse pelo número 23423, sua votação específica teria uma ID parecida a 23423-nn. E, considerando que cada proposição possui sua página no site da Câmara, podemos ter acesso direto ao seu ID, disposto logo na URL da proposição: https://www.camara.leg.br/proposicoesWeb/fichadetramitacao?idProposicao=[ID]. Esta ligação entre os IDs e o site da câmara é bastante útil e até a utilizamos esta para automatizar a coleta das ementas dos projetos em questão com o pacote [rvest](https://rvest.tidyverse.org/).
+
+Em seguida, ao retirarmos a ID da votação, partíamos para a coleta dos dados das votações, mantendo apenas a identificação do deputado e assim unimos estas votações colocando-as como colunas e assim processávamos os dados para que tivéssemos apenas três modalidades possíveis em cada coluna: Sim; Não; e NA (casos de ausências e abstenções). Nosso dataframe, pois, ficou assim:
+
+```{r, echo = F}
+df <- read.csv("data/cong_vot_1922.csv", fileEncoding = "utf8", stringsAsFactors = T)
+row.names(df) <- df$X
+df$X <- NULL
+
+head(df)
+```
+
+Como podem ver, temos bastante casos de deputados que não votaram em várias matérias, uma vez que estes não são obrigados a participar de todas as votações e outros possuem cargos em outras instituições (e, assim, pouco votam). Consideramos esta dimensão importante para a análise do seu voto em 2022, mas acreditamos que não é objetivo deste texto apresentar os mais ou menos presentes, mas sim as posições ideológicas dos deputados, então retiramos esta dimensão de nossa análise, excluindo os dados da ausência de votação em nossa [ACM](https://en.wikipedia.org/wiki/Multiple_correspondence_analysis). Os partidos, aqui, se referem àqueles aos quais os deputados se encontram filiados no presente momento: se um deputado foi eleito pelo antigo PSL (hoje UNIÃO), mas migrou para o PL, o seu partido em nossa base de dados é o PL.
+
+Esclarecidos nossos procedimentos básicos, passemos a uma breve análise das votações analisadas e alguns destaques que podemos fazer destas votações.
+
+### Votos analisados
+
+A partir de nossa investigação das votações presentes no Congresso, selecionamos cerca de 30 votações que consideramos significantes para o debate popular. Dentre elas, tentamos pegar tanto questões econômicas, sociais, culturais, etc., quanto aquelas que tiveram uma divisão mínima dos votos na câmara. Chegamos, então, nas seguintes votações:
+
+```{r, echo=F}
+tabela_vot <- read.csv("references/tabela_vot.csv", fileEncoding = "utf8", header = T)
+deputados <- read.csv("references/deputados.csv", fileEncoding = "utf8", header = T)
+knitr::kable(tabela_vot[c("Cód_ACM", "Ementa")], caption = "Ementas das votações selecionadas")
+```
+
+Os seus códigos utilizados em nossa análise e suas respectivas ID são os seguintes:
+
+```{r, echo=F}
+tabela_vot[3:4]
+```
+
+Estes votos foram selecionados para que tivéssemos uma visão ampla das posições do congresso e que pudessemos entender como as bases ideológicas da esquerda e direita se estruturam no parlamento brasileiro e quais partidos se aproximam mais da agenda política de Bolsonaro.
+
+## Quem é a base de apoio de Bolsonaro?
+
+Como sabemos, o bolsonarismo se baseia em duas grandes frentes ideológicas: o liberalismo econômico e o conservadorismo, unidas com a ressurreição das direitas no mundo inteiro. Contudo, diferentemente das direitas tradicionais brasileiras, estes dois temas são radicalizados e são mobilizados sem aceitar os preceitos da globalização e da mundialização do capital, o que se expressa, em sua escatologia, num confronto contra o "globalismo" e suas elites. Estas posições têm sido interpretadas por alguns autores como o surgimento de uma direita "populista", contudo, gostaríamos de utilizar as votações no congresso como um instrumento interpretativo para nos perguntarmos em que medida este "populismo" se manifesta nas disputas do congresso nacional. Em outras palavras, queremos testar esta proposição a partir de uma análise programática dos partidos baseada nos votos aqui analisados.
+
+Contudo, a principal questão que nos colocamos a investigar, a partir dos dados, são quais partidos se aproximam mais do bolsonarismo, votando em conjunto, e em especial em quais "frentes" de temas que nos interessam. Afinal de contas, pouco interessa que aquele deputado ou deputada se diga oposição a Bolsonaro mas vote conjuntamente a ele nos temas mais significativos de seu governo. Por isso, identificamos, primordialmente, algumas grandes frentes: a econômica, a ambiental, a de costumes e a política.
+
+### Pautas econômicas e políticas
+
+Podemos elencar, dentre as pautas econômicas, as seguintes pautas: a "independência" do BC; as privatizações da Eletrobrás e dos Correios, assim como a liberalização do saneamento básico e das telecomunicações; as reformas nas relações de trabalho, como a carteira verde amarela e as novas regras de contratação durante a pandemia; e, por fim, as votações de interesse fiscal, como os precatórios e a reforma da previdência. Podemos tentar apresentar estes dados brevemente a porcentagem dos deputados dos partidos que votaram "sim" para estes termos:
+
+```{r, echo=FALSE}
+
+partidos <- row.names(prop.table(table(df$Partido, df$correios, useNA = "ifany"), 1))
+
+vot_sim_pecon <- cbind(
+      Correios = prop.table(table(df$Partido, df$correios, useNA = "ifany"), 1)[25:48],
+      EletroBR = prop.table(table(df$Partido, df$eletrobras, useNA = "ifany"), 1)[25:48],
+      Lib_SanBas = prop.table(table(df$Partido, df$lib_san_bas, useNA = "ifany"), 1)[25:48],
+      Imp_Rend = prop.table(table(df$Partido, df$imp_renda, useNA = "ifany"), 1)[25:48],
+      Ind_BC = prop.table(table(df$Partido, df$ind.BC, useNA = "ifany"), 1)[25:48],
+      Ref_Prev = prop.table(table(df$Partido, df$refprev, useNA = "ifany"), 1)[25:48],
+      PEC_Emg = prop.table(table(df$Partido, df$pec.emg, useNA = "ifany"), 1)[25:48],
+      Precat = prop.table(table(df$Partido, df$precatorios, useNA = "ifany"), 1)[25:48],
+      CartVA = prop.table(table(df$Partido, df$cartvdam, useNA = "ifany"), 1)[25:48],
+      MinRefTrab = prop.table(table(df$Partido, df$minireftrab, useNA = "ifany"), 1)[25:48])
+
+row.names(vot_sim_pecon) <- partidos
+
+knitr::kable(vot_sim_pecon, caption = "Proporção de votos 'Sim' dos partidos nos temas econômicos")
+```
+
+Nesta tabela em questão, podemos observar como a maior parte dos partidos da câmara concordaram com as pautas econômicas bolsonaristas, enquanto os partidos de esquerda se opuseram a estes votos (com exceção da proposta do imposto de renda). Note, também, que estes dados tratam a ausência de votos como parte do cálculo das frequências, o que significa que a diferença do total de votos não é necessariamente apenas de votos "Não". Este, inclusive, pode ser um dos motivos para o qual tantas de suas votações em pautas econômicas tiveram votos divididos (já que boa parte dos votos seriam ausentes, ao invés de "Não"), mas, ao mesmo tempo, é inegável que muitos destes partidos são menos ideológicos do que o PL de Bolsonaro ou o NOVO, o que facilita com que estes deputados tenham votações mais diversas.
+
+Devemos esclarecer que os deputados ausentes, contudo, não são apenas deputados "que não trabalham", mas também aqueles que deixaram seus cargos (seja lá por vários motivos, indo-se desde motivos pessoais, como foi o caso de Jean Wyllys, até aqueles que foram assumir outros cargos no poder público).
+
+Outro tema que marcou profundamente este período de votações na Câmara foram as diversas tentativas de reforma política, das quais muitas foram pautadas diretamente pelo próprio Centrão e algumas pela base bolsonarista, como o famigerado voto impresso. Aqui já podemos encontrar uma divisão para além da díade esquerda e direita: estes partidos se dividiram com relação às propostas do Congresso (como as mudanças no conselho do MP, nova lei da improbidade e reforma do sistema eleitoral), como é o caso, por exemplo, de NOVO e PP, na direita, e PT e PSOL, na esquerda. Como veremos melhor à frente, as únicas pautas, neste setor, que mantiveram a divisão entre esquerda e direita foram as novas regras da distribuição do fundo partidário (que passa a contar os deputados mulheres e negros com peso dois na pontuação dos partidos) e o voto impresso.
+
+
+```{r, echo = F}
+vot_sim_ppol <- cbind(
+      Cons_MP = prop.table(table(df$Partido, df$cons_mp, useNA = "ifany"), 1)[25:48],
+      Improb_base = prop.table(table(df$Partido, df$improb_base, useNA = "ifany"), 1)[25:48],
+      Improb_dolo = prop.table(table(df$Partido, df$improb_dolo, useNA = "ifany"), 1)[25:48],
+      Improb_nep = prop.table(table(df$Partido, df$improb_nep, useNA = "ifany"), 1)[25:48],
+      RefSistEleit = prop.table(table(df$Partido, df$sisteleit, useNA = "ifany"), 1)[25:48],
+      SistEleit_Col = prop.table(table(df$Partido, df$sisteleit_col, useNA = "ifany"), 1)[25:48],
+      SistEleit_Dist = prop.table(table(df$Partido, df$sisteleit_dist, useNA = "ifany"), 1)[25:48],
+      FundPart_Divers = prop.table(table(df$Partido, df$div_fundpart, useNA = "ifany"), 1)[25:48],
+      Voto_Impres = prop.table(table(df$Partido, df$vot_imp, useNA = "ifany"), 1)[25:48]
+      )
+
+row.names(vot_sim_ppol) <- partidos
+
+knitr::kable(vot_sim_ppol, caption = "Proporção de votos 'Sim' dos partidos nos temas políticos")
+```
+
+Podemos perceber, então, algumas divisões entre estes partidos, variando-se desde seu conteúdo ideológico até a presença ou não de uma organização ideológica explícita. Como sabemos, o congresso brasileiro não é nada avesso aos partidos "pega-tudo", com um de seus maiores partidos (MDB) sendo um exemplo clássico deste tipo. Além disso, temos temas que são mais ou menos controversos: na seara econômica, por exemplo, o imposto de renda foi muito mais aceito pela esquerda, assim como a "independência" do BC foi acolhida amplamente, com mais de 70% de votos "Sim", por praticamente todos os partidos de direita. Por isso, um agrupamento entre estes grupos sempre terá um ou outro problema e deixará de ressaltar alguns elementos de nossos dados, mas, por mais que aceitemos que toda sistematização é também uma traição (para parafrasear uma frase sobre tradução), estas muitas vezes são necessárias para interpretarmos a realidade e nos atermos aos pontos que realmente diferenciam um grupo de outro.
+
+### Outras pautas
+
+Contudo, antes de sistematizarmos mais profundamente a divisão destes grupos, ainda precisamos apresentar uma terceira dimensão de nossa análise, englobando os temas ambientais, de costumes e de interação com os outros poderes. Estas posições estão expressas na tabela abaixo, podendo-se destacar que boa parte das oposições entre esquerda e direita se reproduzem por aqui: a esquerda se opôs, por exemplo, às liberalizações nas regras ambientais, à posse de armas e à distribuição de verbas do FUNDEB a escolas sem fins lucrativos (dentre as quais se destacam escolas religiosas), enquanto apoiou a prisão de Daniel Silveira, a ratificação da Convenção Interamericana sobre o Racismo e a suspensão temporária de despejos durante o período da pandemia. A direita, por sua vez, se encontrou mais dividida nestes termos: podemos identificar grupos mais *hardcore* na defesa do liberalismo e do conservadorismo, se opondo à prisão de Daniel Silveira, à convenção sobre racismo e à suspensão dos despejos, enquanto outro grupo mais *soft* aceitaria estes termos.
+
+```{r, echo = FALSE}
+vot_sim_pdiv <- cbind(
+      Agrotox = prop.table(table(df$Partido, df$agrotox, useNA = "ifany"), 1)[25:48],
+      Grilagem = prop.table(table(df$Partido, df$grilagem, useNA = "ifany"), 1)[25:48],
+      Lic_Amb = prop.table(table(df$Partido, df$lic_amb, useNA = "ifany"), 1)[25:48],
+      Mineracao = prop.table(table(df$Partido, df$mineracao_votourg, useNA = "ifany"), 1)[25:48],
+      JogAzar = prop.table(table(df$Partido, df$jogazar, useNA = "ifany"), 1)[25:48],
+      ConvInterRac = prop.table(table(df$Partido, df$conv_interam_rac, useNA = "ifany"), 1)[25:48],
+      Pri_DSil = prop.table(table(df$Partido, df$dsil, useNA = "ifany"), 1)[25:48],
+      Posse_Arm = prop.table(table(df$Partido, df$posse_armas, useNA = "ifany"), 1)[25:48],
+      Proib_Desp_Pand = prop.table(table(df$Partido, df$proib_desp_pand, useNA = "ifany"), 1)[25:48],
+      FUNDEB_Igr = prop.table(table(df$Partido, df$fundeb_igrej, useNA = "ifany"), 1)[25:48])
+
+row.names(vot_sim_pdiv) <- partidos
+
+knitr::kable(vot_sim_pdiv, caption = "Proporção de votos 'Sim' dos partidos em temas diversos")
+```
+
+Decerto não será surpresa para ninguém que o grupo *hard* do liberalismo se trata dos bolsonaristas (e novistas), enquanto o *soft* seria o centrão. Esta talvez seja uma das viradas mais pronunciadas no congresso durante este período de nossa análise, mas ainda que esta direita radical tenha tomado o poder no executivo, ela não possui forças para efetivamente impôr suas pautas sozinha, ainda mais porque não existe, dentro da direita tradicional, prioridade com relação a estas pautas. É por este motivo que não temos tantas votações dos costumes: estes, mesmo se passam nas comissões especiais da Câmara, não tendem a ser levados a plenário pelo presidente da câmara, membro do Centrão. Tal situação também evidencia os limites do poder executivo, o qual, por mais que possua as emendas provisórias -- das quais Bolsonaro usou e abusou, inclusive sendo [campeão de vetos derrubados](https://www.em.com.br/app/noticia/politica/2020/08/14/interna_politica,1176160/bolsonaro-e-o-presidente-com-mais-vetos-derrubados-pelo-congresso.shtml) --, ainda depende profundamente do congresso para governar.
+
+Nesta análise em questão, podemos ver que a base de Bolsonaro é, na realidade, apenas uma pequena parcela do congresso, apesar de seu imenso sucesso nas eleições de 2018 (seu antigo partido, o PSL, foi o segundo mais votado, com cerca de [52 deputados eleitos](https://noticias.uol.com.br/politica/eleicoes/2018/raio-x/camara/)). É importante notar, pois, que esta ascensão se deu conjuntamente ao derretimento de siglas clássicas da direita tradicional, como o MDB e o PSDB, mas, mesmo com este processo de reconfiguração eleitoral (que Singer denominou de "reativação da direita"), podemos ver que o chamado Centrão ainda possui um papel central na organização do congresso brasileiro. 
+
+Tudo isso, acreditamos, reforça a importância deste trabalho em te ajudar a escolher uma bancada que possa representar nossos interesses e ajudar ou monitorar o presidente eleito neste ano (2022). Mas ainda precisamos seguir com um método para posicionar e definir mais claramente estes partidos e quantificar, afinal, a composição da Câmara. Este método, para nós, é a análise geométrica de dados.
+
+## Análise Geométrica das votações
+
+Nossa análise das votações, utilizando-as como indicativos da posição política dos partidos, deputados e das composições dentro do congresso, passa também por uma proposta metodológica diferenciada: não acreditamos que simplesmente categorizar as votações em esquerda e direita seria suficiente, mas, pelo contrário, que precisaríamos deixar que estas categorias se sobressaísem a partir dos próprios dados. O motivo para esta motivação é que esquerda e direita são, também, conceituações historicamente mutáveis e, assim, defini-las previamente nos levaria a esconder as oposições reais existentes dentro do congresso. Por isso, nos interessamos em analisar a composição dos votos nos temas selecionados a partir da chamada "análise geométrica de dados", uma vez que o propósito deste modelo de análise se trata de garantir uma descrição dos dados, de foco qualitativo, para que possamos compreender a sua estrutura, assim como evitar a imposição de visões do pesquisador sobre os dados.
+
+Os maiores princípios deste método se dão a partir de dois eixos centrais: primeiro, há uma redução dos dados, assimilando múltiplas variáveis e modalidades dentro de dimensões que condensam estas informações e reduzem as informações desnecessárias de nossa análise (as métricas utilizadas para tal são diferenciadas dependendo do método utilizado, podendo-se utilizar medidas como a correlação, probabilidade condicional, etc.) enquanto explica-se a maior quantidade de variância possível; e, segundo, as oposições, proximidades e níveis de particularidade destas modalidades são representadas espacialmente, contruindo-se uma representação geométrica que facilita nossa interpretação das categorias que aproximam ou distanciam nossos casos analisados, formando-se uma nuvem de casos (linhas da nossa base de dados) e categorias (marcações únicas de cada coluna).
+
+Em nossa análise, portanto, como pode ser visto em nossa base de dados, temos como casos os deputados e como modalidades as votações nos temas do congresso e o partido destes deputados. Contudo, para construir nosso espaço utilizaremos apenas as votações como forças constituintes deste espaço, deixando os partidos como variáveis suplementares, posicionando-os na média de seus deputados. Além disso, como já falamos, também excluímos as abstenções da composição de nosso espaço de votação, mas estas ainda estão presentes em nossos dados e certamente puxaram alguns deputados mais para o centro -- isto ficará mais claro na clusterização dos indivíduos.
+
+### Espaço da votação dos partidos
+
+A partir do processamento dos dados em uma ACM, pudemos identificar duas dimensões significativas para nossa análise: uma primeira, na qual temos a oposição entre esquerda e direita, com esta votando a favor das propostas de Bolsonaro e aquela contra; e, segundo, uma oposição entre deputados pró-establishment e aqueles anti-establishment, opondo-se tanto a votações de interesse do congresso quanto a temas com um consenso geral dentro da câmara. Estas duas dimensões estão representadas, respectivamente, horizontal e verticalmente, em nossa ACM.
+
+```{r, echo = F, warning=FALSE, out.width="800px", out.height="1000px"}
+
+mca.vot <- MCA(df, quali.sup = 1, graph = FALSE)
+mca.vot.sna <- MCA(df, quali.sup = 1, graph = FALSE, excl = grep("NA$", row.names(mca.vot$var$contrib)))
+
+fviz_mca_var(mca.vot.sna, axes = c(1, 2), repel = TRUE, geom=c("point", "text"), col.var="contrib", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), title = "Espaço da votação dos partidos na Câmara dos deputados (2019-2022)", ggtheme = theme_gray ()) + coord_flip()
+```
+
+Uma das primeiras questões que devem ficar claras é a posição de determinados partidos dentro deste espaço: entre partidos de esquerda, temos PT, PSOL, REDE, PDT, PCdoB e PSB, localizados acima; entre os partidos de direita temos o PATRIOTA, UNIÃO, NOVO, PL e REPUBLICANOS, localizados abaixo. Mas vale a pena ressaltar que a grande diferença real, aqui, se encontra entre esquerda e não-esquerda: o centrão, ao invés de ser um centro de fato, realiza votações constantes com a direita e se afasta bastante da esquerda, enquanto se aproxima do bolsonarismo.
+
+O elemento que os difere da direita *hardcore*, como já falamos, se trata de sua posição com relação ao establishment, representado na segunda dimensão de nossa ACM. Aqui, contudo, não se trata apenas de uma divisão dentro da direita, mas que também afeta setores da esquerda -- no caso desta, com níveis limitados. Podemos citar como exemplo os deputados do PSOL e PDT, que votaram principalmente contra a mudança do conselho do Ministério Público e as reformas no sistema eleitoral (seja no texto base e na coligação), mas não votaram contra a maioria nos termos da divisão do fundo partidário, da prisão de Daniel Silveira, etc. O PSOL, PV e REDE também se posicionaram contra a nova lei da improbidade administrativa, o que os colocou, dentre os partidos de esquerda, como os mais anti-establishment. Contudo, os campeões do anti-establishment são partidos de direita, em especial o NOVO, que além de se oporem a estas mudanças favoráveis ao congresso ainda foram "do contra" nos termos da suspensão de despejos, na ratificação da convenção interamericana sobre o racismo, na nova conta da divisão do fundo partidário, etc. 
+
+Esta diferença entre os partidos, aqui representada em distâncias geométricas, configura divisões que se expressam objetivamente em programas e atuações de suas lideranças. O bolsonarismo se associar ao anti-establishment é uma representação perfeita e parece confirmar a dimensão dual de sua perspectiva política, esbanjando um liberalismo conservador digno de espantar o próprio centrão brasileiro. Além disso, no caso de partidos como PCdoB e PT, nos parece mera retórica apontá-los como populistas, uma vez que, como nossos dados demonstram, eles defendem o establishment de forma bastante consistente, compondo posições de acordo com a maioria do congresso e debatendo temas nos quais eles realmente possuem divergências programáticas. 
+
+Neste sentido, um ponto interessante que pode ser destacado dentre essas diferenças de programa é o completo abandono das pautas ambientais por parte de deputados que não sejam de esquerda: praticamente todos os outros partidos não se opuseram às propostas problemáticas de liberalização da exploração da natureza e, de fato, este parece ser um tema exclusivo da esquerda, assim como a oposição à utilização de recursos do FUNDEB para entidades de ensino sem fins lucrativos e à liberalização do porte de armas e outros temas que não necessariamente se limitam a uma dimensão econômica. Direita e esquerda, então, não se diferenciam apenas por posições econômicas (mais ou menos intervenção do Estado na economia), como o modelo do compasso político forçaria sobre nossos dados.
+
+Comprenendidas as posições e programas em disputa no congresso, foquemo-nos numa avaliação mais objetiva dos partidos e suas divisões. Partamos, pois, para a clusterização dos nossos deputados, tentando compreender seus padrões de votação e suas distribuições entre os partidos políticos aqui presentes.
+
+### Clusters de deputados e distribuição entre partidos
+
+Uma clusterização nada mais é do que um agrupamento de uma sequência de casos em grupos homogêneos, tendo-se como objetivo reduzir ao máximo a variância dentro do grupo e aumentando a distância entre estes a partir de um número selecionado de clusters. Isto significa que este processo se torna possível em uma aplicação computadorizada porque nossos programas adquirem objetivos claros e precisos para dividir da melhor forma possível os nossos grupos a partir do número por nós definidos. Nosso modelo de clusterização, entretanto, é um pouco diferente porque, ao tratarmos de dados categóricos (com votos "sim", "não" e "ausente"), optamos por clusterizar nossos deputados a partir de suas posições em nossa ACM. Isto é interessante não apenas porque convertemos dados categóricos (votos) em numéricos (posições), mas também porque, como já falamos, nos atentamos aos pontos que realmente interessam na análise, sintetizados em nossas duas dimensões principais (esquerda x direita e pró-establishment x anti-establishment).
+
+Considerando o propósito de dividirmos nossos grupos em posições políticas, decidimos dividir os deputados em 5 clusters, visando chegar a uma separação entre esquerda, centro-esquerda, centro, centro-direita e direita. Como podemos ver no gráfico abaixo, esta divisão se encontrou parcialmente representada:
+
+```{r, echo = F, out.width="1000px", out.height="800px"}
+
+clusters <- HCPC(res = mca.vot.sna, graph = F, nb.clust = 5, description = T)
+
+plot.HCPC(x = clusters, choice = "map", draw.tree = F, title = "Espaço do voto dos deputados na Câmara (2019-2022)")
+```
+
+Estes clusters, então, representam uma divisão entre a esquerda e a direita mais ou menos pró-establishment, permitindo-nos representar as tensões internas dentro das próprias forças políticas que se identificam na esquerda ou na direita. Para compreender as diferentes votações dos membros que participam de determinados clusters, podemos apresentar com quais votos cada cluster se associa mais:
+
+```{r, echo = FALSE}
+knitr::knit_print(as.data.frame(clusters$desc.var$category$`1`) %>% filter(`v.test` > 2) %>% select(c(p.value, v.test)))
+```
+
+```{r, echo=FALSE}
+as.data.frame(clusters$desc.var$category$`2`) %>% filter(`v.test` > 2) %>% select(c(p.value, v.test))
+```
+
+```{r, echo=FALSE}
+as.data.frame(clusters$desc.var$category$`3`) %>% filter(`v.test` > 2) %>% select(c(p.value, v.test))
+```
+
+```{r, echo=FALSE}
+as.data.frame(clusters$desc.var$category$`4`) %>% filter(`v.test` > 2) %>% select(c(p.value, v.test))
+```
+
+```{r, echo = FALSE}
+as.data.frame(clusters$desc.var$category$`5`) %>% filter(`v.test` > 2) %>% select(c(p.value, v.test))
+```
+
+O cluster 3, como podemos ver, se tratam dos deputados ausentes, seja por exoneração, licença médica, etc., o que os aproxima do centro de nosso espaço de votação, e, neste sentido, abriga políticos de diversos matizes. Os outros grupos, entretanto, possuem associações com diferentes partidos. É possível notar, por exemplo, como o cluster 1, da direita *hardcore* da qual falamos, tem entre seus partidos o PL, partido de Bolsonaro, o UNIÃO e o NOVO. Também na direita temos o cluster 2, o qual, ao contrário do anterior, se associa à direita *soft*, ou o famoso centrão, com partidos como o MDB, SOLIDARIEDADE, REPUBLICANOS e o PP. Na esquerda também temos uma divisão, mas menos pelo nível de esquerda, e mais pela oposição ao establishment: dentre os contrários a este, representados no cluster 4, temos o PSOL, PDT e PSB, e, nos favoráveis, se destacam o PT, PCdoB e também o PSB.
+
+Mas quem são, afinal de contas, os deputados que representam estas posições? Dispomos logo abaixo os deputados mais representativos de cada cluster:
+
+```{r, echo = F}
+knitr::kable(deputados[grep(paste0(names(clusters$desc.ind$dist$`1`), collapse = "|"), deputados$id), c("nome", "siglaPartido")], caption = "Principais deputados do cluster 1")
+```
+
+
+```{r, echo = F}
+knitr::kable(deputados[grep(paste0(names(clusters$desc.ind$dist$`2`), collapse = "|"), deputados$id), c("nome", "siglaPartido")], caption = "Principais deputados do cluster 2")
+```
+
+
+```{r, echo = F}
+knitr::kable(deputados[grep(paste0(names(clusters$desc.ind$dist$`3`), collapse = "|"), deputados$id), c("nome", "siglaPartido")], caption = "Principais deputados do cluster 3")
+```
+
+
+```{r, echo = F}
+knitr::kable(deputados[grep(paste0(names(clusters$desc.ind$dist$`4`), collapse = "|"), deputados$id), c("nome", "siglaPartido")], caption = "Principais deputados do cluster 4")
+
+```
+
+```{r, echo = F}
+knitr::kable(deputados[grep(paste0(names(clusters$desc.ind$dist$`5`), collapse = "|"), deputados$id), c("nome", "siglaPartido")], caption = "Principais deputados do cluster 5")
+```
+
+Podemos ver, nos deputados do cluster 1, políticos extremamente bolsonaristas, tais quais o "príncipe" Philippe de Orleans e Bragança, Caroline de Toni, todos do PL, assim como no cluster 2 também temos predominantemente membros do centrão. No cluster 3, se destacam políticos licenciados, exonerados e até mesmo falecidos. No cluster 4, chegamos a encontrar André Janones e dois membros da bancada Lehmann (Felipe Rigoni e Tábata Amaral), que não seriam necessariamente os deputados mais à esquerda, mas que tiveram várias votações à esquerda. Isto assim se dá porque o que caracteriza o cluster 4 não é apenas votar em temas caros à esquerda, mas também em oposição à "política tradicional". É possível inclusive demonstrar como estes grupos se diferenciam a partir de uma média da posição dos membros destes clusters:
+
+
+```{r, echo = F}
+dep_coord <- as.data.frame(mca.vot.sna$ind$coord)
+dep_coord$clust <- clusters$data.clust$clust
+
+knitr::kable(data.frame(Dim1 = tapply(dep_coord$`Dim 1`, dep_coord$clust, mean),
+                        Dim2 = tapply(dep_coord$`Dim 2`, dep_coord$clust, mean)), 
+             row.names = T, caption = "Média das posições dos indivíduos agrupados em seus clusters"
+             )
+```
+
+Nesta tabela podemos ver, então, como o cluster 1 se encontra mais à direita que o 2, enquanto o cluster 4 não é mais de esquerda que o 5. Por isso, é preciso reconhecer que existem variações dentro dos clusters, mas o padrão geral de suas posições se mantém: a maior parte dos membros de um cluster votam de acordo com os padrões já esboçados anteriormente. Sendo assim, quando pensamos em votar em um partido, precisamos pensar nos tipos de deputados que eles terão em suas fileiras e a divisão dos clusteres entre estes pode ser uma indicação interessante em qual partido votar. Vejamos a distribuição destes:
+
+```{r, echo = F}
+knitr::kable(prop.table(table(clusters$data.clust$Partido, clusters$data.clust$clust), 1),
+             caption = "Distribuição dos deputados dos partidos por cluster")
+```
+
+Como podemos ver, temos diversos tipos de partidos: desde que aqueles basicamente têm gente de tudo quanto é tipo, como o AVANTE; aqueles que se limitam à direita, possuindo deputados que se posicionam apenas entre os clusters 1, 2 e 3, como o PSC, PTB, REPUBLICANOS, etc. Dentre a esquerda, temos partidos com uma predominância muito maior de deputados pró-establishment, como o PT e o PCdoB, e outros de uma esquerda mais anti-establishment, como o PDT e o PSOL, enquanto o PSB faria o meio-de-campo destes grupos (inclusive com a maior porcentagem de membros do cluster 2 na esquerda). Da direita, os partidos mais radicalizados são o NOVO e o UNIÃO, com ou todos ou maioria de seus deputados dentro do cluster 1. O PL, de Bolsonaro, parece possuir uma posição mais eclética, inclusive tendo como maioria de seus deputados membros do cluster 2. Isto se deve, obviamente, ao fato de ser um partido do centrão anteriormente à chegada de Bolsonaro, e pode ser que na próxima eleição sua configuração se modifique. 
+
+Mas quais são os deputados e deputadas que se posicionam nos extremos de nosso espaço de votação? Podemos vê-los a seguir:
+
+```{r, echo = F}
+knitr::kable(deputados[which(dep_coord$`Dim 1` == max(dep_coord$`Dim 1`)), c("nome", "siglaPartido")], 
+             caption = "Deputados mais à esquerda")
+```
+
+
+```{r, echo = F}
+knitr::kable(deputados[which(dep_coord$`Dim 1` == min(dep_coord$`Dim 1`)), c("nome", "siglaPartido")],
+             caption = "Deputados mais à direita")
+```
+
+
+```{r, echo = F}
+knitr::kable(deputados[which(dep_coord$`Dim 2` == max(dep_coord$`Dim 2`)), c("nome", "siglaPartido")],
+             caption = "Deputados mais anti-establishment")
+```
+
+
+```{r, echo = F}
+knitr::kable(deputados[which(dep_coord$`Dim 2` == min(dep_coord$`Dim 2`)), c("nome", "siglaPartido")],
+             caption = "Deputados mais pró-establishment")
+```
+Os deputados mais à esquerda se dividem entre o PDT e o PSOL, enquanto o mais à direita é uma única deputada bolsonarista: Bia Kicis. Dentre os mais anti-establishment, também temos um bolsonarista, Junio Amaral, e o mais pró-establishment é um senador antigo do PCdoB, sem votações. Para ilustrar melhor a posição destes deputados pró-establishment, podemos analisar o data.frame dos indivíduos posicionados mais abaixo em nosso espaço de votação com votação no tema do sistema eleitoral (um dos pontos mais importantes para definir o posicionamento neste eixo):
+
+```{r, echo = F}
+dep_establish <- df[which(dep_coord$`Dim 2` < quantile(dep_coord$`Dim 2`, 0.1)), ]
+
+cbind(dep_establish[which(!is.na(dep_establish$sisteleit)),], clusters$data.clust[row.names(dep_establish)[which(!is.na(dep_establish$sisteleit))], "clust"])
+```
+
+Obviamente, estes grupos votam a favor dos temas do congresso, como já falamos, e são membros de partidos do centrão. Isto também não significa que os membros ausentes não sejam, em certa medida, de fato pró-establishment, uma vez que sua ausência na votação implica na aceitação, mesmo que tácita, dos temas que estão sendo votados. Este ponto também foi importante para definirmos a ideia de establishment como o termo mais adequado para a definição deste eixo de nossa análise.
+
+Mas aonde Bolsonaro se posicionaria especificamente dentre estes clusters? Esta tarefa poderia ser difícil de se realizar se não tivéssemos um representante da família no congresso. E sabem em qual cluster Eduardo Bolsonaro está? Se você respondeu "cluster `r clusters$data.clust$clust[grep("Bolsonaro", deputados$nome)]`", você acertou! Não nos parece errado afirmar que o grosso do bolsonarismo está no cluster 1 e mesmo que estes grupos se organizem em partidos diferentes, suas posições políticas não são divergentes suficientes para dizer que não atuam, de fato, pelos mesmos interesses e não tem as mesmas posições políticas. 
+
+
+### Recomendações para a seleção de deputados
+
+Um dos pontos principais deste texto é também apontar que a máxima do senso-comum que "todos os partidos são iguais" é balela pura e que políticos fazem parte de diversos espectros, tendo aqueles que atuam mais ou menos ideologicamente, mais ou menos fisiologicamente, etc., e que a solução para problemas políticos não se dão com a anti-política. Pelo contrário, políticos servem para defender ideias e propósitos sociais e é nosso papel atuar com e sem o voto para garantir não apenas a representação, mas também que certas ideias e propostas sejam cada vez mais ou menos adotadas. Se vemos tantos deputados aceitando tacitamente os pressupostos de liberalização da exploração do meio-ambiente e oferta privatista dos serviços públicos, isto se dá pelo fato que estes grupos se organizam politicamente de forma extensiva e intensiva. Estudos do DIAP mostram, por exemplo, que empresários (que obviamente não são micro-empresários) são o grupo mais representado no congresso. Quantos destes, você acha, vão trabalhar para defender seus interesses, se você é trabalhador? Na mesma medida, a bancada ruralista, da bíblia e da bala estão aqui há muito tempo, impondo suas pautas e fazendo seu lobby, e a sua eleição foi recorde em 2018.
+
+Por isso, a virada à direita no Brasil não pode ser dissociada das condições do congresso: ela só chegou aonde chegou porque, historicamente, elegemos figuras conservadoras para este espaço. E, na mesma medida, esta guinada também não foi absoluta, mantendo-se elementos da direita fisiológica, o que freou os direitistas *hardocore*, mas tal situação pode piorar se o poder legislativo não conseguir constituir uma base progressista mínima. E, assim, tomar cuidado com as votações para o legislativo é algo central na próxima eleição: aquele voto no primo, conhecido, meme ou jogador de futebol pode ser justamente um dos pontos para a direita fisiológica se manter no poder, assim como pode fortalecer ainda mais os grupos conservadores que usam e abusam desta estratégia para arrancar votos dos apolíticos. [Tiririca](https://congressoemfoco.uol.com.br/cf-premio-e-analise/radar-do-congresso/tiririca-oposicao-governo-bolsonaro-partidos-fieis/) e [Frota](https://www.poder360.com.br/opiniao/tenho-coragem-para-colocar-impeachment-em-discussao-escreve-alexandre-frota/) fazem oposição a Bolsonaro, mas os outros deputados que eles ajudaram a eleger certamente não o fazem, como nossos dados demonstram.
+
+Alguns roteiros de votação podem ser esboçados aqui: primeiro, analise os dados das votações e se pergunte se concorda com elas. Por exemplo, acha correto as novas regras ambientais? Concorda com as privatizações? Acha que os armamentos devem ser liberados. Acreditamos que nossos gráficos e tabelas dão uma boa ideia de onde se posicionar e assim que definir melhor os pontos com os quais você concorda, tente achar o partido mais próximo de seus pontos, seja por meio de nossa ACM ou pelas tabelas de votações "Sim". Por exemplo, se se discorda das privatizações e das mudanças nas leis ambientais, mas não concorda com as mudanças no conselho do MP, um partido da esquerda anti-establishment, como PDT e PSOL, pode ser mais interessante. Também consulte a composição destes partidos em seu estado: em alguns eles tendem a ser mais de esquerda e em outros mais de direita, então evitar certos votos para grupos de seu estado pode ser importante.
+
+Não pretendemos lançar um programa que te direcione a um candidato porque acreditamos que a política é coletiva, é entender o projeto de um partido e de grupos organizados, com eles se juntar e atuar. Por isso, entender a posição real destes grupos é muito mais importante do que achar um indivíduo perdido que possa te representar. Sendo assim, nosso maior conselho não seria simplesmente decidir o voto, mas também se engajar politicamente e participar do debate coletivo dentro destes partidos. Não falamos necessariamente de filiação, mas, por exemplo, de acompanhar as posições dos partidos que te interessam, buscar coletivos do partido, entrar em grupos destes em redes sociais, etc., podem ser caminhos interessantes para conhecer melhor do debate político e conhecer um grupo no qual se tenha confiança em votar. Não caia no conto do vigário da votação em conhecidos e muito menos jogue votos fora, seja com o voto nulo ou votando pela zoeira. Boa parte de seu destino está nas urnas eletrônicas!
+
+## Referências
